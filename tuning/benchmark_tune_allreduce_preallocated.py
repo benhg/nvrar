@@ -45,7 +45,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'build'))
 
 try:
-    from yalis_nvshmem_collectives import nvshmem_comm_cuda
+    from nvrar import nvshmem_comm_cuda
 except ImportError as e:
     print(f"Failed to import nvshmem_comm_cuda extension: {e}")
     sys.exit(1)
