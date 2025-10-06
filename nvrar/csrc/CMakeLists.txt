@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.17)
 project(nvshmem_comm_cuda LANGUAGES CXX CUDA)
 
-
-set(CMAKE_CUDA_ARCHITECTURES 80)
+if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES native CACHE STRING "CUDA architectures")
+endif()
 
 # 1) Find Python interpreter + development headers (for <Python.h>)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
@@ -43,10 +44,10 @@ message(STATUS "Using NVSHMEM_ROOT = ${NVSHMEM_ROOT}")
 
 # 5) Build exactly one Python extension module
 add_library(nvshmem_comm_cuda MODULE
-    src/nvshmem_comm/nvshmem_comm.cpp
-    src/nvshmem_comm/ll8_coll.cu
-    src/nvshmem_comm/simple_coll.cu
-    src/nvshmem_comm/nvshmem_comm_bindings.cpp   
+    src/nvshmem_comm.cpp
+    src/ll8_coll.cu
+    src/simple_coll.cu
+    src/nvshmem_comm_bindings.cpp   
 )
 
 # define TORCH_EXTENSION_NAME so pybind11 sees the right name:

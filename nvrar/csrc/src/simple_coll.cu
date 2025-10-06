@@ -2,7 +2,7 @@
 // See the top-level LICENSE file for details.
 //
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-#include "nvshmem_comm/simple_coll.cuh"
+#include "simple_coll.cuh"
 
 #include <algorithm>
 #include <string>

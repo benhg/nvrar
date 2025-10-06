@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2025 Parallel Software and Systems Group, University of Maryland.
+# See the top-level LICENSE file for details.
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 """
 Tune NVSHMEM allreduce_preallocated kernel parameters for one or more message sizes.
@@ -20,15 +24,9 @@ Notes:
 - Explores a grid of (num_blocks, threads_per_block, chunk_bytes) combinations.
 - Measures per-rank GPU time with CUDA events and reports the global max latency (critical path) across ranks.
 - Validates correctness (tensor values == world_size) for each parameter combination.
+- The best_output is saved to the NVRAR_CACHE_DIR
 """
 
-try:
-    from mpi4py import MPI
-    print("✓ Successfully imported MPI4Py")
-except ImportError as e:
-    print(f"✗ Failed to import MPI4Py: {e}")
-    print("Please install MPI4Py: pip install mpi4py")
-    sys.exit(1)
 import os
 import sys
 import json
@@ -41,13 +39,14 @@ import torch
 import torch.distributed as dist
 import numpy as np
 
-# Add the build directory to the Python path so we can import the extension
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'build'))
-
 try:
-    from nvrar import nvshmem_comm_cuda
+    from nvrar import nvshmem_comm_cuda, NVRAR_CACHE_DIR
 except ImportError as e:
     print(f"Failed to import nvshmem_comm_cuda extension: {e}")
+    sys.exit(1)
+
+if not nvshmem_comm_cuda:
+    print("✗ NVRAR is not available")
     sys.exit(1)
 
 
@@ -111,7 +110,7 @@ def parse_size_list(csv: str) -> list:
 
 def detect_local_device(rank: int) -> int:
     # Prefer LOCAL_RANK (torchrun). Fallback to common MPI env vars if present.
-    for key in ("LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK", "MPI_LOCALRANKID", "MV2_COMM_WORLD_LOCAL_RANK"):
+    for key in ("LOCAL_RANK",): 
         val = os.environ.get(key)
         if val is not None:
             try:
@@ -140,6 +139,7 @@ def main():
     parser.add_argument("--output", type=str, default="tune_results.json", help="Path to save detailed JSON results (rank 0)")
     parser.add_argument("--best-output", type=str, default=None, help="Optional path to save message_size -> best_params JSON (rank 0)")
     parser.add_argument("--quiet", action="store_true", help="Reduce non-rank0 logging")
+    parser.add_argument("--cache-dir", type=str, default=None, help="Path to cache directory")
 
     args = parser.parse_args()
 
@@ -152,6 +152,10 @@ def main():
         dist.init_process_group(backend=backend, init_method=os.environ.get("DIST_INIT_METHOD", "env://"))
     rank = dist.get_rank()
     world_size = dist.get_world_size()
+
+    if args.best_output is None:
+        # default best output path
+        args.best_output = f"tuning_{world_size}gpu_{args.dtype}.json"
 
     # Device selection (auto-detect from local rank)
     local_device = detect_local_device(rank)
@@ -391,6 +395,7 @@ def main():
             print(f"\nSaved detailed results to {args.output}")
 
         if args.best_output:
+            args.best_output = os.path.join(NVRAR_CACHE_DIR, args.best_output)
             with open(args.best_output, 'w') as f:
                 json.dump(best_map, f, indent=2)
             if not args.quiet:
@@ -401,7 +406,6 @@ def main():
     if dist.is_initialized():
         dist.barrier()
         dist.destroy_process_group()
-    MPI.Finalize()
 
 
 if __name__ == "__main__":

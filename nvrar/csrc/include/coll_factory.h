@@ -4,9 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 #pragma once
 
-#include "nvshmem_comm/coll.h"
-#include "nvshmem_comm/ll8_coll.cuh"
-#include "nvshmem_comm/simple_coll.cuh"
+#include "coll.h"
+#include "ll8_coll.cuh"
+#include "simple_coll.cuh"
 
 class CollFactory {
  public:

@@ -17,8 +17,8 @@
 #include <string>
 #include <tuple>
 
-#include "nvshmem_comm/coll_factory.h"
-#include "nvshmem_comm/nvshmem_utils.h"
+#include "coll_factory.h"
+#include "nvshmem_utils.h"
 
 class NVSHMEMCommWrapper {
  public:

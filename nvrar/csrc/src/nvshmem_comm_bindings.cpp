@@ -7,8 +7,8 @@
 
 #include <memory>
 
-#include "nvshmem_comm/coll.h"
-#include "nvshmem_comm/nvshmem_comm.h"
+#include "coll.h"
+#include "nvshmem_comm.h"
 
 namespace py = pybind11;
 

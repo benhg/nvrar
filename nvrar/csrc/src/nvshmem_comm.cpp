@@ -2,7 +2,7 @@
 // See the top-level LICENSE file for details.
 //
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-#include "nvshmem_comm/nvshmem_comm.h"
+#include "nvshmem_comm.h"
 
 #include <cuda_runtime.h>
 #include <mpi.h>
@@ -19,8 +19,6 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-
-#include "nvshmem_comm/coll_factory.h"
 
 NVSHMEMCommWrapper::NVSHMEMCommWrapper(int rank, int world_size, int device)
     : rank_(rank),
