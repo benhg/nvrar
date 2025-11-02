@@ -7,8 +7,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "coll.h"
 #include "nvshmem_utils.h"
+#include "coll.h"
 
 #define POLL_TIMEOUT 100
 

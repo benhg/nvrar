@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# Copyright 2025 Parallel Software and Systems Group, University of Maryland.
+# See the top-level LICENSE file for details.
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 from pathlib import Path
 import os
 from platformdirs import user_cache_dir

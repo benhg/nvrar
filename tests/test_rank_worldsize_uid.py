@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright 2025 Parallel Software and Systems Group, University of Maryland.
+# See the top-level LICENSE file for details.
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 """
 Simple test to check if NVSHMEMCommWrapper constructor works and can get rank/world size.
 Run with: mpirun -np 4 python test_rank_worldsize.py
@@ -13,16 +18,15 @@ import numpy as np
 # Add the build directory to the Python path so we can import the extension
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'build'))
 
-from yalis_nvshmem_collectives import HAS_NVSHMEM
-if HAS_NVSHMEM:
-  try:
-      from yalis_nvshmem_collectives import nvshmem_comm_cuda
-      print("✓ Successfully imported nvshmem_comm_cuda extension")
-  except ImportError as e:
-        print(f"✗ Failed to import nvshmem_comm_cuda extension: {e}")
-        sys.exit(1)
-else:
-    print("✗ NVSHMEM is not available")
+try:
+  from nvrar import nvshmem_comm_cuda
+  print("✓ Successfully imported nvshmem_comm_cuda extension")
+except ImportError as e:
+  print(f"✗ Failed to import nvshmem_comm_cuda extension: {e}")
+  sys.exit(1)
+
+if nvshmem_comm_cuda is None:
+    print("✗ NVRAR is not available")
     sys.exit(1)
 
 def test_allreduce():
