@@ -74,6 +74,8 @@ target_include_directories(nvshmem_comm_cuda PRIVATE
 
 # 9.1) CUDA 13 CCCL headers live under <CUDA_ROOT>/include/cccl
 # Try to locate CUDA root from CUDA_HOME/CUDA_PATH or from nvcc
+# Allow user override via -DCUDA_CCCL_INCLUDE_DIR
+set(CUDA_CCCL_INCLUDE_DIR "" CACHE PATH "Path to CUDA CCCL include directory (contains cuda/std)")
 set(_CUDA_ROOT "")
 if(DEFINED ENV{CUDA_HOME})
   set(_CUDA_ROOT $ENV{CUDA_HOME})
@@ -83,9 +85,18 @@ elseif(CMAKE_CUDA_COMPILER)
   get_filename_component(_CUDA_BIN_DIR "${CMAKE_CUDA_COMPILER}" DIRECTORY)
   get_filename_component(_CUDA_ROOT "${_CUDA_BIN_DIR}" DIRECTORY)
 endif()
-if(_CUDA_ROOT AND EXISTS "${_CUDA_ROOT}/include/cccl")
+if(CUDA_CCCL_INCLUDE_DIR)
+  if(EXISTS "${CUDA_CCCL_INCLUDE_DIR}/cuda/std/tuple" OR EXISTS "${CUDA_CCCL_INCLUDE_DIR}/cuda/std")
+    message(STATUS "Using user-provided CUDA CCCL include path: ${CUDA_CCCL_INCLUDE_DIR}")
+    target_include_directories(nvshmem_comm_cuda PRIVATE "${CUDA_CCCL_INCLUDE_DIR}")
+  else()
+    message(WARNING "CUDA_CCCL_INCLUDE_DIR does not contain cuda/std: ${CUDA_CCCL_INCLUDE_DIR}")
+  endif()
+elseif(_CUDA_ROOT AND EXISTS "${_CUDA_ROOT}/include/cccl")
   message(STATUS "Adding CUDA CCCL include path: ${_CUDA_ROOT}/include/cccl")
   target_include_directories(nvshmem_comm_cuda PRIVATE "${_CUDA_ROOT}/include/cccl")
+else()
+  message(STATUS "CUDA CCCL include path not found; set -DCUDA_CCCL_INCLUDE_DIR=<path to .../include/cccl>")
 endif()
 
 # Torch Python shim: prefer target if present, else raw library

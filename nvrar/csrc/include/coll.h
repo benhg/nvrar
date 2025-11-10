@@ -75,7 +75,7 @@ class CollBase : public IColl {
     uint64_t id = next_id_.fetch_add(1);
     // Let derived class register scratch/meta using size/dtype/device
     const size_t size = static_cast<size_t>(t.numel());
-    const torch::Dtype dt = t.dtype();
+    const torch::Dtype dt = t.scalar_type();
     const torch::Device dev = t.device();
     derived()->register_tensor(id, size, dt, dev);
     return id;

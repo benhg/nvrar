@@ -14,7 +14,7 @@ import os
 import torch
 import numpy as np
 from nvshmem import core as nvshmem
-import cuda.core
+from cuda.core.experimental import Device
 
 
 def test_nvshmem4py_basics():
@@ -28,7 +28,7 @@ def test_nvshmem4py_basics():
     try:
         # Initialize device
         torch.cuda.set_device(torch.device(f"cuda:{local_rank}"))
-        cuda_dev = cuda.core.Device(local_rank)
+        cuda_dev = Device(local_rank)
         cuda_dev.set_current()
 
         # Initialize nvshmem4py via UID method
@@ -57,7 +57,7 @@ def test_nvshmem4py_basics():
             print("✓ nvshmem.n_pes() matches torch.distributed world_size")
 
         # Allocate symmetric tensor with nvshmem and free it
-        t = nvshmem.tensor(4096, dtype=torch.float16, device=f"cuda:{local_rank}")
+        t = nvshmem.tensor((4096,), dtype=torch.float16)
         t.fill_(1)
         torch.cuda.synchronize()
 

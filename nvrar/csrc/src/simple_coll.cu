@@ -147,10 +147,15 @@ void RecursiveSimpleColl::set_kernel_params(int num_blocks,
   }
 
   chunk_signal_size_ = num_blocks_ * steps_inter_;
-  chunk_signal_ =
-      (uint64_t*)nvshmem_calloc(chunk_signal_size_, sizeof(uint64_t));
-  if (!chunk_signal_) {
-    throw std::runtime_error("Failed to allocate chunk signal memory");
+  // TODO: Adding this so that I can test on 1-node. Is this valuable?
+  if (steps_inter_ > 0) {
+    chunk_signal_ =
+        (uint64_t*)nvshmem_calloc(chunk_signal_size_, sizeof(uint64_t));
+    if (!chunk_signal_) {
+      throw std::runtime_error("Failed to allocate chunk signal memory");
+    }
+  } else {
+    chunk_signal_ = nullptr;
   }
 }
 

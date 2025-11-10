@@ -39,7 +39,7 @@ import torch
 import torch.distributed as dist
 import numpy as np
 from nvshmem import core as nvshmem
-import cuda.core
+from cuda.core.experimental import Device
 
 try:
     from nvrar import nvshmem_comm_cuda, NVRAR_CACHE_DIR
@@ -196,7 +196,7 @@ def main():
         sys.exit(1)
 
     # Initialize NVSHMEM via nvshmem4py using UID method
-    cuda_dev = cuda.core.Device(local_device)
+    cuda_dev = Device(local_device)
     cuda_dev.set_current()
     uniqueid = nvshmem.get_unique_id(empty=True)
     if rank == 0:
@@ -228,7 +228,7 @@ def main():
 
     def tune_one_size(num_elems: int):
         # Allocate symmetric tensor via nvshmem4py and register to get tensor id
-        tensor = nvshmem.tensor(num_elems, dtype=dtype, device=torch.device(f"cuda:{local_device}"))
+        tensor = nvshmem.tensor((num_elems,), dtype=dtype)
         tensor_id = comm_wrapper.register_tensor(tensor, nvshmem_comm_cuda.Protocol.LL8)
 
         def valid_combo(nb: int, tpb: int, chunk_b: int) -> bool:

@@ -32,7 +32,7 @@ from typing import List
 import torch
 import torch.distributed as dist
 from nvshmem import core as nvshmem
-import cuda.core
+from cuda.core.experimental import Device
 
 try:
     from nvrar import nvshmem_comm_cuda, resolve_params
@@ -384,7 +384,7 @@ def main():
     comm_wrapper = None
     if nvshmem_comm_cuda is not None:
         # Set device current
-        cuda_dev = cuda.core.Device(local_device_idx)
+        cuda_dev = Device(local_device_idx)
         cuda_dev.set_current()
         # Rank 0 obtains UID; broadcast via object list
         uniqueid = nvshmem.get_unique_id(empty=True)
@@ -424,7 +424,7 @@ def main():
         algorithm = "recursive"
         if comm_wrapper is not None:
             # Allocate symmetric tensor via nvshmem4py and register with wrapper
-            nvrar_tensor = nvshmem.tensor(num_elems, dtype=dtype, device=device)
+            nvrar_tensor = nvshmem.tensor((num_elems,), dtype=dtype)
             nvrar_tensor_id = comm_wrapper.register_tensor(nvrar_tensor, nvshmem_comm_cuda.Protocol.LL8)
 
             # Choose kernel params

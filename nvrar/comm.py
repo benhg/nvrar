@@ -7,7 +7,7 @@
 import torch
 import torch.distributed as dist
 import nvshmem.core
-import cuda.core
+from cuda.core.experimental import Device
 from . import nvshmem_comm_cuda
 
 class NVRARCommunicator:
@@ -19,7 +19,7 @@ class NVRARCommunicator:
             return
 
         device = torch.cuda.current_device()
-        cuda_dev = cuda.core.Device(device)
+        cuda_dev = Device(device)
         # This should be idempotent
         cuda_dev.set_current()
         stream = torch.cuda.current_stream()
