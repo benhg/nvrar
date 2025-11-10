@@ -72,6 +72,22 @@ target_include_directories(nvshmem_comm_cuda PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include                 # Our headers
 )
 
+# 9.1) CUDA 13 CCCL headers live under <CUDA_ROOT>/include/cccl
+# Try to locate CUDA root from CUDA_HOME/CUDA_PATH or from nvcc
+set(_CUDA_ROOT "")
+if(DEFINED ENV{CUDA_HOME})
+  set(_CUDA_ROOT $ENV{CUDA_HOME})
+elseif(DEFINED ENV{CUDA_PATH})
+  set(_CUDA_ROOT $ENV{CUDA_PATH})
+elseif(CMAKE_CUDA_COMPILER)
+  get_filename_component(_CUDA_BIN_DIR "${CMAKE_CUDA_COMPILER}" DIRECTORY)
+  get_filename_component(_CUDA_ROOT "${_CUDA_BIN_DIR}" DIRECTORY)
+endif()
+if(_CUDA_ROOT AND EXISTS "${_CUDA_ROOT}/include/cccl")
+  message(STATUS "Adding CUDA CCCL include path: ${_CUDA_ROOT}/include/cccl")
+  target_include_directories(nvshmem_comm_cuda PRIVATE "${_CUDA_ROOT}/include/cccl")
+endif()
+
 # Torch Python shim: prefer target if present, else raw library
 set(_need_torch_python ON)
 if(TARGET Torch::Python)
