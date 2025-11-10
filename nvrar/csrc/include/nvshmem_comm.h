@@ -23,10 +23,6 @@
 class NVSHMEMCommWrapper {
  public:
   NVSHMEMCommWrapper(int rank, int world_size, int device);
-  // Initialize using NVSHMEM unique id based attributes; unique_id is the raw
-  // bytes returned by nvshmemx_get_uniqueid
-  NVSHMEMCommWrapper(int rank, int world_size, int device,
-                     const torch::Tensor& unique_id_bytes);
   ~NVSHMEMCommWrapper();
 
   // Disable copy constructor and assignment operator
@@ -35,11 +31,10 @@ class NVSHMEMCommWrapper {
 
   void destroy();
 
-  std::tuple<torch::Tensor, uint64_t> allocate_tensor(size_t size,
-                                                      torch::Dtype dtype,
-                                                      torch::Device device,
-                                                      Protocol protocol);
-  void free_tensor(uint64_t id);
+  // Register an externally-allocated symmetric tensor (e.g., nvshmem4py)
+  // Returns an internal tensor id used by collectives
+  uint64_t register_tensor(torch::Tensor& tensor, Protocol protocol);
+  void deregister_tensor(uint64_t id);
 
   // Collective operations
   void allreduce_preallocated(torch::Tensor& tensor, uint64_t id,
@@ -50,15 +45,6 @@ class NVSHMEMCommWrapper {
   void set_kernel_params(Protocol protocol, int num_blocks,
                          int threads_per_block, size_t chunk_size);
 
-  // Getter methods
-  int get_rank() const { return rank_; }
-  int get_world_size() const { return world_size_; }
-
-  int get_mype() const { return mype_; }
-  int get_npes() const { return npes_; }
-
-  static torch::Tensor get_unique_id_bytes();
-
  private:
   void initialize_coll(Protocol protocol);
 
@@ -68,6 +54,7 @@ class NVSHMEMCommWrapper {
   int npes_;
   int device_;
   bool initialized_;
+  bool owns_nvshmem_init_ = false;
 
   nvshmemx_uniqueid_t uid_ = NVSHMEMX_UNIQUEID_INITIALIZER;
 

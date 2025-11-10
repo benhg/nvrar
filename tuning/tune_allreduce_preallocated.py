@@ -38,6 +38,8 @@ from itertools import product
 import torch
 import torch.distributed as dist
 import numpy as np
+from nvshmem import core as nvshmem
+import cuda.core
 
 try:
     from nvrar import nvshmem_comm_cuda, NVRAR_CACHE_DIR
@@ -193,14 +195,21 @@ def main():
             print("No valid message sizes to tune. Ensure sizes > 0.")
         sys.exit(1)
 
-    # Broadcast NVSHMEM UID and initialize communicator via UID constructor
-    uid_bytes = nvshmem_comm_cuda.NVSHMEMCommWrapper.get_unique_id_bytes()
-    uid_gpu = uid_bytes.to(f"cuda:{local_device}")
-    dist.broadcast(uid_gpu, src=0)
+    # Initialize NVSHMEM via nvshmem4py using UID method
+    cuda_dev = cuda.core.Device(local_device)
+    cuda_dev.set_current()
+    uniqueid = nvshmem.get_unique_id(empty=True)
+    if rank == 0:
+        uniqueid = nvshmem.get_unique_id()
+        obj = [uniqueid]
+    else:
+        obj = [None]
+    dist.broadcast_object_list(obj, src=0)
     dist.barrier()
-    uid_cpu = uid_gpu.to("cpu")
+    nvshmem.init(device=cuda_dev, uid=obj[0], rank=rank, nranks=world_size, initializer_method="uid")
 
-    comm_wrapper = nvshmem_comm_cuda.NVSHMEMCommWrapper(rank, world_size, local_device, uid_cpu)
+    # Construct wrapper without passing UID (NVSHMEM already initialized)
+    comm_wrapper = nvshmem_comm_cuda.NVSHMEMCommWrapper(rank, world_size, local_device)
 
     # Parameter grid
     grid_num_blocks = parse_int_list(args.num_blocks)
@@ -218,8 +227,9 @@ def main():
     stream_ptr = stream.cuda_stream
 
     def tune_one_size(num_elems: int):
-        # Allocate preallocated tensor and id for this size
-        tensor, tensor_id = comm_wrapper.allocate_tensor(num_elems, dtype, torch.device(f"cuda:{local_device}"), nvshmem_comm_cuda.Protocol.LL8)
+        # Allocate symmetric tensor via nvshmem4py and register to get tensor id
+        tensor = nvshmem.tensor(num_elems, dtype=dtype, device=torch.device(f"cuda:{local_device}"))
+        tensor_id = comm_wrapper.register_tensor(tensor, nvshmem_comm_cuda.Protocol.LL8)
 
         def valid_combo(nb: int, tpb: int, chunk_b: int) -> bool:
             # Guard constraints from kernels: partitioning uses integer division per block.
@@ -326,7 +336,8 @@ def main():
                 print("  No valid configurations found.")
 
         # Free resources for this size
-        comm_wrapper.free_tensor(tensor_id)
+        comm_wrapper.deregister_tensor(tensor_id)
+        nvshmem.free_tensor(tensor)
 
         return results_local, topk
 

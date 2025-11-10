@@ -30,9 +30,11 @@ class IColl {
   virtual void init(int num_blocks, int threads_per_block,
                     size_t chunk_size) = 0;
 
-  virtual std::tuple<torch::Tensor, uint64_t> allocate_tensor(
-      size_t size, torch::Dtype dt, torch::Device dev) = 0;
-  virtual void free_tensor(uint64_t id) = 0;
+  // Register an externally-allocated symmetric tensor (e.g., via nvshmem4py)
+  // Returns a newly assigned tensor id
+  virtual uint64_t register_external_tensor(torch::Tensor& t) = 0;
+  // Deregister a previously registered tensor without freeing memory
+  virtual void deregister_tensor(uint64_t id) = 0;
 
   virtual void dispatch_allreduce_preallocated(torch::Tensor& t, uint64_t id,
                                                cudaStream_t s,
@@ -47,10 +49,7 @@ template <class Derived>
 class CollBase : public IColl {
  public:
   ~CollBase() noexcept override {
-    for (auto [id, ptr] : allocated_tensors_) {
-      nvshmem_free(ptr);
-    }
-    allocated_tensors_.clear();
+    // Nothing to free: external tensors are owned by nvshmem4py
   }
 
   void init(int num_blocks, int threads_per_block, size_t chunk_size) override {
@@ -67,34 +66,23 @@ class CollBase : public IColl {
     derived()->initialize(num_blocks, threads_per_block, chunk_size);
   }
 
-  std::tuple<torch::Tensor, uint64_t> allocate_tensor(
-      size_t size, torch::Dtype dt, torch::Device dev) override {
-    void* ptr = nvshmem_malloc(size * torch::elementSize(dt));
-
-    if (!ptr) {
-      throw std::runtime_error("Failed to allocate tensor memory");
+  uint64_t register_external_tensor(torch::Tensor& t) override {
+    // Accept a pre-allocated symmetric tensor; we do not own its memory
+    void* ptr = t.data_ptr();
+    if (ptr == nullptr) {
+      throw std::runtime_error("register_external_tensor: null data_ptr");
     }
-
     uint64_t id = next_id_.fetch_add(1);
-    allocated_tensors_[id] = ptr;
-
-    // Register the tensor with the derived class which can maintain its own
-    // scratch memory
+    // Let derived class register scratch/meta using size/dtype/device
+    const size_t size = static_cast<size_t>(t.numel());
+    const torch::Dtype dt = t.dtype();
+    const torch::Device dev = t.device();
     derived()->register_tensor(id, size, dt, dev);
-
-    auto tensor = torch::from_blob(ptr, {static_cast<int64_t>(size)},
-                                   torch::dtype(dt).device(dev));
-    return std::make_tuple(tensor, id);
+    return id;
   }
 
-  void free_tensor(uint64_t id) override {
-    if (allocated_tensors_.find(id) == allocated_tensors_.end()) {
-      throw std::runtime_error("Invalid tensor ID");
-    }
-    nvshmem_free(allocated_tensors_[id]);
+  void deregister_tensor(uint64_t id) override {
     derived()->deregister_tensor(id);
-
-    allocated_tensors_.erase(id);
   }
 
   void dispatch_allreduce_preallocated(torch::Tensor& t, uint64_t id,
@@ -124,9 +112,6 @@ class CollBase : public IColl {
   Derived* derived() { return static_cast<Derived*>(this); }
 
  protected:
-  // Memory Pools for allocated tensors
-  std::unordered_map<uint64_t, void*> allocated_tensors_;
-
   // Next ID for allocated tensors
   std::atomic<uint64_t> next_id_;
 
