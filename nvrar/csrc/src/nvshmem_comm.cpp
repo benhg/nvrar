@@ -5,7 +5,6 @@
 #include "nvshmem_comm.h"
 
 #include <cuda_runtime.h>
-#include <mpi.h>
 #include <nvshmem.h>
 #include <nvshmemx.h>
 
@@ -28,22 +27,9 @@ NVSHMEMCommWrapper::NVSHMEMCommWrapper(int rank, int world_size, int device)
   // Set device
   CUDA_CHECK(cudaSetDevice(device_));
 
-  // If NVSHMEM not initialized, initialize using MPI; otherwise, assume Python already initialized via nvshmem4py
+  // Require NVSHMEM to be already initialized (via nvshmem4py)
   if (nvshmemx_init_status() != NVSHMEM_STATUS_IS_INITIALIZED) {
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    if (!mpi_initialized) {
-      int argc = 0;
-      char** argv = nullptr;
-      MPI_Init(&argc, &argv);
-    }
-    nvshmemx_init_attr_t attr = NVSHMEMX_INIT_ATTR_INITIALIZER;
-    MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    attr.mpi_comm = &mpi_comm;
-    nvshmemx_init_attr(NVSHMEMX_INIT_WITH_MPI_COMM, &attr);
-    owns_nvshmem_init_ = true;
-  } else {
-    owns_nvshmem_init_ = false;
+    throw std::runtime_error("NVSHMEM is not initialized. Initialize via nvshmem4py before constructing NVSHMEMCommWrapper.");
   }
 
   // Get PE information
@@ -76,9 +62,6 @@ void NVSHMEMCommWrapper::destroy() {
     std::cout << "NVSHMEMCommWrapper destroying" << std::endl;
     nvshmem_barrier_all();
     coll_map_.clear();  // This will automatically delete all unique_ptr objects
-    if (owns_nvshmem_init_) {
-      nvshmem_finalize();
-    }
     initialized_ = false;
   }
 }

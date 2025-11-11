@@ -54,7 +54,6 @@ class NVSHMEMCommWrapper {
   int npes_;
   int device_;
   bool initialized_;
-  bool owns_nvshmem_init_ = false;
 
   nvshmemx_uniqueid_t uid_ = NVSHMEMX_UNIQUEID_INITIALIZER;
 
