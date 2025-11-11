@@ -303,15 +303,17 @@ void RecursiveLL8Coll::register_tensor(uint64_t id, size_t size,
   nvshmem_barrier_all();
 
   // Create signal tensors that hold the peer sequence numbers to wait on
-  uint64_t* seq_num_signal =
-      (uint64_t*)nvshmem_calloc(steps_inter_, sizeof(uint64_t));
-  if (!seq_num_signal) {
-    throw std::runtime_error("Failed to allocate signal memory");
+  uint64_t* seq_num_signal = nullptr;
+  // TODO: 
+  if (steps_inter_ > 0) {
+    seq_num_signal = (uint64_t*)nvshmem_calloc(steps_inter_, sizeof(uint64_t));
+    if (!seq_num_signal) {
+      throw std::runtime_error("Failed to allocate signal memory");
+    }
+    init_signal_kernel<<<1, steps_inter_>>>(seq_num_signal, steps_inter_);
+    cudaDeviceSynchronize();
+    nvshmem_barrier_all();
   }
-
-  init_signal_kernel<<<1, steps_inter_>>>(seq_num_signal, steps_inter_);
-  cudaDeviceSynchronize();
-  nvshmem_barrier_all();
 
   allocated_scratch_send_[id] = send_scratch;
   allocated_scratch_recv_[id] = recv_scratch;
@@ -321,13 +323,17 @@ void RecursiveLL8Coll::register_tensor(uint64_t id, size_t size,
 }
 
 void RecursiveLL8Coll::deregister_tensor(uint64_t id) {
-  // TODO: Implement
+  // TODO: Adding this so that I can test on 1-node. Is this valuable?
   if (allocated_scratch_send_.find(id) == allocated_scratch_send_.end()) {
     throw std::runtime_error("Invalid tensor ID");
   }
   nvshmem_free(allocated_scratch_send_[id]);
   nvshmem_free(allocated_scratch_recv_[id]);
   nvshmem_free(seq_num_signals_[id]);
+  // Free only if allocated (steps_inter_ > 0)
+  if (seq_num_signals_[id]) {
+    nvshmem_free(seq_num_signals_[id]);
+  }
   cudaFree(seq_nums_[id]);
   allocated_scratch_send_.erase(id);
   allocated_scratch_recv_.erase(id);

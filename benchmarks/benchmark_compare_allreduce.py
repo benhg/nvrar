@@ -31,6 +31,8 @@ from typing import List
 
 import torch
 import torch.distributed as dist
+from nvshmem import core as nvshmem
+from cuda.core.experimental import Device
 
 try:
     from nvrar import nvshmem_comm_cuda, resolve_params
@@ -381,12 +383,22 @@ def main():
     # Initialize NVSHMEM communicator if available
     comm_wrapper = None
     if nvshmem_comm_cuda is not None:
-        uid_bytes = nvshmem_comm_cuda.NVSHMEMCommWrapper.get_unique_id_bytes()
-        uid_gpu = uid_bytes.to(device)
-        dist.broadcast(uid_gpu, src=0)
+        # Set device current
+        cuda_dev = Device(local_device_idx)
+        cuda_dev.set_current()
+        # Rank 0 obtains UID; broadcast via object list
+        uniqueid = nvshmem.get_unique_id(empty=True)
+        if rank == 0:
+            uniqueid = nvshmem.get_unique_id()
+            obj = [uniqueid]
+        else:
+            obj = [None]
+        dist.broadcast_object_list(obj, src=0)
         dist.barrier()
-        uid_cpu = uid_gpu.to("cpu")
-        comm_wrapper = nvshmem_comm_cuda.NVSHMEMCommWrapper(rank, world_size, local_device_idx, uid_cpu)
+        # Initialize nvshmem4py
+        nvshmem.init(device=cuda_dev, uid=obj[0], rank=rank, nranks=world_size, initializer_method="uid")
+        # Construct wrapper without UID (nvshmem already initialized)
+        comm_wrapper = nvshmem_comm_cuda.NVSHMEMCommWrapper(rank, world_size, local_device_idx)
 
     # Use default stream
     stream = torch.cuda.Stream(device=local_device_idx)
@@ -411,7 +423,9 @@ def main():
         nvrar_tensor_id = None
         algorithm = "recursive"
         if comm_wrapper is not None:
-            nvrar_tensor, nvrar_tensor_id = comm_wrapper.allocate_tensor(num_elems, dtype, device, nvshmem_comm_cuda.Protocol.LL8)
+            # Allocate symmetric tensor via nvshmem4py and register with wrapper
+            nvrar_tensor = nvshmem.tensor((num_elems,), dtype=dtype)
+            nvrar_tensor_id = comm_wrapper.register_tensor(nvrar_tensor, nvshmem_comm_cuda.Protocol.LL8)
 
             # Choose kernel params
             if params_resolver is not None:
@@ -513,7 +527,8 @@ def main():
 
         # Cleanup
         if comm_wrapper is not None and nvrar_tensor_id is not None:
-            comm_wrapper.free_tensor(nvrar_tensor_id)
+            comm_wrapper.deregister_tensor(nvrar_tensor_id)
+            nvshmem.free_tensor(nvrar_tensor)
 
     dist.barrier()
     if dist.is_initialized():

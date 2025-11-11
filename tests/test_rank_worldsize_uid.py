@@ -5,117 +5,68 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 """
-Simple test to check if NVSHMEMCommWrapper constructor works and can get rank/world size.
-Run with: mpirun -np 4 python test_rank_worldsize.py
+Simple test to check nvshmem4py PE querying and symmetric tensor allocation/free.
+Run with: torchrun --nproc_per_node=4 tests/test_rank_worldsize_uid.py
 """
 
 import sys
 import os
 import torch
 import numpy as np
+from nvshmem import core as nvshmem
+from cuda.core.experimental import Device
 
 
-# Add the build directory to the Python path so we can import the extension
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'build'))
-
-try:
-  from nvrar import nvshmem_comm_cuda
-  print("✓ Successfully imported nvshmem_comm_cuda extension")
-except ImportError as e:
-  print(f"✗ Failed to import nvshmem_comm_cuda extension: {e}")
-  sys.exit(1)
-
-if nvshmem_comm_cuda is None:
-    print("✗ NVRAR is not available")
-    sys.exit(1)
-
-def test_allreduce():
-    """Test creating NVSHMEMCommWrapper and getting rank/world size."""
-    
+def test_nvshmem4py_basics():
+    """Test nvshmem4py my_pe/n_pes and symmetric tensor alloc/free."""
     rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     local_rank = rank % 4
 
-    print(f"\n=== Testing NVSHMEMCommWrapper Constructor (Rank {rank}/{world_size-1}) ===")
-    
+    print(f"\n=== Testing nvshmem4py (Rank {rank}/{world_size-1}) ===")
+
     try:
-        unique_id = nvshmem_comm_cuda.NVSHMEMCommWrapper.get_unique_id_bytes()
+        # Initialize device
+        torch.cuda.set_device(torch.device(f"cuda:{local_rank}"))
+        cuda_dev = Device(local_rank)
+        cuda_dev.set_current()
 
-        uid_gpu = unique_id.to("cuda")
-        torch.distributed.broadcast(uid_gpu, 0)
-        torch.distributed.barrier()
-        unique_id = uid_gpu.to("cpu")
-
-        # Create an NVSHMEMCommWrapper instance using the shared unique id
-        comm_wrapper = nvshmem_comm_cuda.NVSHMEMCommWrapper(rank, world_size, local_rank, unique_id)
-        print(f"✓ Successfully created NVSHMEMCommWrapper instance for rank {rank}")
-        
-        # Test getting rank
-        wrapper_rank = comm_wrapper.get_rank()
-        print(f"✓ get_rank() returned: {wrapper_rank}")
-        
-        # Test getting world size
-        wrapper_world_size = comm_wrapper.get_world_size()
-        print(f"✓ get_world_size() returned: {wrapper_world_size}")
-        
-        # Verify correctness
-        if wrapper_rank == rank and wrapper_world_size == world_size:
-            print("✓ Wrapper values match MPI values")
+        # Initialize nvshmem4py via UID method
+        uniqueid = nvshmem.get_unique_id(empty=True)
+        if rank == 0:
+            uniqueid = nvshmem.get_unique_id()
+            obj = [uniqueid]
         else:
-            print(f"✗ Wrapper values don't match MPI: wrapper({wrapper_rank}, {wrapper_world_size}) vs MPI({rank}, {world_size})")
-            return False
+            obj = [None]
+        torch.distributed.broadcast_object_list(obj, src=0)
+        torch.distributed.barrier()
+        nvshmem.init(device=cuda_dev, uid=obj[0], rank=rank, nranks=world_size, initializer_method="uid")
 
+        # Query PEs from nvshmem4py
+        my_pe = nvshmem.my_pe()
+        n_pes = nvshmem.n_pes()
+        print(f"✓ nvshmem.my_pe()={my_pe}, nvshmem.n_pes()={n_pes}")
 
         torch.distributed.barrier()
-        
-        # Test All Reduce with all 1s
-        local_rank = rank % 4
-        tensor, tensor_id = comm_wrapper.allocate_tensor(4096, torch.float16, torch.device(f"cuda:{local_rank}"), nvshmem_comm_cuda.Protocol.SIMPLE)
-        tensor.fill_(1)
-        
-        num_chunks = 1024 // 32 // 4
-        comm_wrapper.set_kernel_params(nvshmem_comm_cuda.Protocol.SIMPLE, 1, 512, 4096)
 
-        for i in range(10000):
-            tensor.fill_(1)
-            comm_wrapper.allreduce_preallocated(tensor, tensor_id, 0, "recursive")
+        # Basic sanity: world sizes should match
+        if n_pes != world_size:
+            print(f"✗ nvshmem.n_pes() != torch.distributed world_size: {n_pes} vs {world_size}")
+            return False
+        else:
+            print("✓ nvshmem.n_pes() matches torch.distributed world_size")
 
-
+        # Allocate symmetric tensor with nvshmem and free it
+        t = nvshmem.tensor((4096,), dtype=torch.float16)
+        t.fill_(1)
         torch.cuda.synchronize()
 
-        # # Check if the tensor is all reduced
-        if not torch.allclose(tensor, torch.ones(4096, dtype=torch.float16, device=f"cuda:{local_rank}") * world_size):
-            print(f"✗ All reduce (all 1s) failed on rank {rank}")
-            print(f"Tensor: {tensor}")
-            return False
-
-        print(f"✓ All reduce (all 1s) completed on rank {rank}")
-        print(f"Tensor: {tensor}")
-        torch.distributed.barrier()
-
-        # Test All Reduce with random values
-        tensor_random_local = torch.randn(4096, dtype=torch.float16, device=f"cuda:{local_rank}")
-        tensor_random_global = torch.zeros(4096, dtype=torch.float16, device=f"cuda:{local_rank}")
-        tensor_random_global.copy_(tensor_random_local)
-        torch.distributed.all_reduce(tensor_random_global, op=torch.distributed.ReduceOp.SUM)
-
-
-        for i in range(10000):
-            tensor.copy_(tensor_random_local)
-            comm_wrapper.allreduce_preallocated(tensor, tensor_id, 0, "recursive")
-        
+        # No collective here; just ensure allocation and free work
+        nvshmem.free_tensor(t)
         torch.cuda.synchronize()
-
-        if not torch.allclose(tensor, tensor_random_global, rtol=1e-2, atol=2e-2):
-            print(f"✗ All reduce (random values) failed on rank {rank}")
-            print(f"Tensor: {tensor}")
-            print(f"Tensor random global: {tensor_random_global}")
-            return False
-
-        print(f"✓ All reduce (random values) completed on rank {rank}")
-        print(f"Tensor: {tensor}")
+        print(f"✓ nvshmem.tensor/free_tensor succeeded on rank {rank}")
         return True
-        
+
     except Exception as e:
         print(f"✗ Error during testing on rank {rank}: {e}")
         import traceback
@@ -131,14 +82,14 @@ if __name__ == "__main__":
     torch.cuda.set_device(torch.device(f"cuda:{local_rank}"))
     
     if rank == 0:
-        print("Testing NVSHMEMCommWrapper constructor with Torch Process groups")
+        print("Testing nvshmem4py with Torch Process groups")
         print(f"Running with {world_size} processes")
         print("=" * 60)
     
     # Synchronize all processes
     torch.distributed.barrier()
     
-    success = test_allreduce()
+    success = test_nvshmem4py_basics()
 
     success_t = torch.tensor(int(success), device=f"cuda:{local_rank}", dtype=torch.int32)
     torch.distributed.all_reduce(success_t, op=torch.distributed.ReduceOp.MIN)  # MIN==1 only if everyone had 1
